@@ -1,0 +1,6 @@
+*.img
+*.lz4
+*.ko
+*.log
+__pycache__/
+.DS_Store
