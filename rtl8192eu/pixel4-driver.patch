@@ -1,0 +1,238 @@
+diff --git a/Makefile b/Makefile
+index 7720c10..0ee9d67 100644
+--- a/Makefile
++++ b/Makefile
+@@ -6,6 +6,8 @@ ccflags-y += -O2
+ ccflags-y += -Wno-unused-variable
+ ccflags-y += -Wno-unused-label
+ ccflags-y += -Wno-unused-function
++# This vendor driver uses mixed declarations; keep diagnostics non-fatal.
++ccflags-y += -Wno-error=declaration-after-statement
+ 
+ GCC_VER_49 := $(shell echo `$(CC) -dumpversion | cut -f1-2 -d.` \>= 4.9 | bc )
+ ifeq ($(GCC_VER_49),1)
+@@ -118,8 +120,8 @@ CONFIG_RTW_SDIO_PM_KEEP_POWER = y
+ CONFIG_MP_VHT_HW_TX_MODE = n
+ ###################### Platform Related #######################
+ CONFIG_PLATFORM_ARM_RPI = n
+-CONFIG_PLATFORM_ARM_AARCH64 = n
+-CONFIG_PLATFORM_I386_PC = y
++CONFIG_PLATFORM_ARM_AARCH64 = y
++CONFIG_PLATFORM_I386_PC = n
+ CONFIG_PLATFORM_ANDROID_X86 = n
+ CONFIG_PLATFORM_ANDROID_INTEL_X86 = n
+ CONFIG_PLATFORM_JB_X86 = n
+@@ -2354,6 +2356,5 @@ clean:
+ 	rm -fr .tmp_versions
+ endif
+ 
+-# For compatibility with kernels prior to 2.6.24.
+-EXTRA_CFLAGS += $(ccflags-y)
+-EXTRA_LDFLAGS += $(ldflags-y)
++# Modern Kbuild consumes ccflags-y/ldflags-y directly.
++# Do not mirror them to EXTRA_*: Makefile.lib maps EXTRA_* back to them.
+diff --git a/core/rtw_security.c b/core/rtw_security.c
+index e209f7b..f3b80cd 100644
+--- a/core/rtw_security.c
++++ b/core/rtw_security.c
+@@ -1575,7 +1575,7 @@ u32	rtw_aes_encrypt(_adapter *padapter, u8 *pxmitframe)
+ 	pframe = ((struct xmit_frame *)pxmitframe)->buf_addr + hw_hdr_offset;
+ 
+ 	/* 4 start to encrypt each fragment */
+-	if ((pattrib->encrypt == _AES_)) {
++	if (pattrib->encrypt == _AES_) {
+ 		/*
+ 				if(pattrib->psta)
+ 				{
+@@ -1930,7 +1930,7 @@ u32	rtw_aes_decrypt(_adapter *padapter, u8 *precvframe)
+ 	u32	res = _SUCCESS;
+ 	pframe = (unsigned char *)((union recv_frame *)precvframe)->u.hdr.rx_data;
+ 	/* 4 start to encrypt each fragment */
+-	if ((prxattrib->encrypt == _AES_)) {
++	if (prxattrib->encrypt == _AES_) {
+ 
+ 		stainfo = rtw_get_stainfo(&padapter->stapriv , &prxattrib->ta[0]);
+ 		if (stainfo != NULL) {
+diff --git a/hal/hal_dm.c b/hal/hal_dm.c
+index db1f47c..049b33a 100644
+--- a/hal/hal_dm.c
++++ b/hal/hal_dm.c
+@@ -550,7 +550,7 @@ void rtw_hal_turbo_edca(_adapter *adapter)
+ 		return;
+ 	}
+ 
+-	if ((pregpriv->wifi_spec == 1)) { /* || (pmlmeinfo->HT_enable == 0)) */
++	if (pregpriv->wifi_spec == 1) { /* || (pmlmeinfo->HT_enable == 0)) */
+ 		precvpriv->is_any_non_be_pkts = _FALSE;
+ 		return;
+ 	}
+diff --git a/hal/hal_hci/hal_usb.c b/hal/hal_hci/hal_usb.c
+index de0fc65..2e117c2 100644
+--- a/hal/hal_hci/hal_usb.c
++++ b/hal/hal_hci/hal_usb.c
+@@ -17,6 +17,14 @@
+ #include <drv_types.h>
+ #include <hal_data.h>
+ 
++/* Match the kernel tasklet callback type for Clang CFI. */
++#ifdef PLATFORM_LINUX
++static void usb_recv_tasklet_callback(unsigned long data)
++{
++	usb_recv_tasklet((void *)data);
++}
++#endif
++
+ int	usb_init_recv_priv(_adapter *padapter, u16 ini_in_buf_sz)
+ {
+ 	struct recv_priv	*precvpriv = &padapter->recvpriv;
+@@ -25,7 +33,7 @@ int	usb_init_recv_priv(_adapter *padapter, u16 ini_in_buf_sz)
+ 
+ #ifdef PLATFORM_LINUX
+ 	tasklet_init(&precvpriv->recv_tasklet,
+-		     (void(*)(unsigned long))usb_recv_tasklet,
++		     usb_recv_tasklet_callback,
+ 		     (unsigned long)padapter);
+ #endif /* PLATFORM_LINUX */
+ 
+diff --git a/hal/hal_mp.c b/hal/hal_mp.c
+index 5e6fa54..a6c5bc8 100644
+--- a/hal/hal_mp.c
++++ b/hal/hal_mp.c
+@@ -182,7 +182,7 @@ void hal_mpt_CCKTxPowerAdjust(PADAPTER Adapter, BOOLEAN bInCH14)
+ 	} else if (IS_HARDWARE_TYPE_8723D(Adapter)) {
+ 		/* 2.4G CCK TX DFIR */
+ 		/* 2016.01.20 Suggest from RS BB mingzhi*/
+-		if ((u1Channel == 14)) {
++		if (u1Channel == 14) {
+ 			phy_set_bb_reg(Adapter, rCCK0_TxFilter2, bMaskDWord, 0x0000B81C);
+ 			phy_set_bb_reg(Adapter, rCCK0_DebugPort, bMaskDWord, 0x00000000);
+ 			phy_set_bb_reg(Adapter, 0xAAC, bMaskDWord, 0x00003667);
+diff --git a/hal/phydm/phydm_math_lib.c b/hal/phydm/phydm_math_lib.c
+index aa5f3a9..cf1568c 100644
+--- a/hal/phydm/phydm_math_lib.c
++++ b/hal/phydm/phydm_math_lib.c
+@@ -181,7 +181,6 @@ u32 odm_convert_to_db(u64 value)
+ 	} else {
+ 		if (db_invert_table[i][j] - value >
+ 		    value - db_invert_table[i][j - 1]) {
+-			i = i;
+ 			j = j - 1;
+ 		}
+ 	}
+diff --git a/hal/rtl8192e/rtl8192e_hal_init.c b/hal/rtl8192e/rtl8192e_hal_init.c
+index 6a420af..e953d0f 100644
+--- a/hal/rtl8192e/rtl8192e_hal_init.c
++++ b/hal/rtl8192e/rtl8192e_hal_init.c
+@@ -4569,7 +4569,7 @@ static void read_chip_version_8192e(PADAPTER Adapter)
+ 	RTW_INFO("%s 0xF0 = 0x%x\n", __FUNCTION__, value32);
+ 
+ 	pHalData->version_id.ICType = CHIP_8192E;
+-	pHalData->version_id.RFType = (value32 & RF_TYPE_ID) ? RF_2T2R : RF_1T1R;
++	pHalData->version_id.RFType = (value32 & RF_TYPE_ID) ? RF_TYPE_2T2R : RF_TYPE_1T1R;
+ 	pHalData->version_id.ChipType = ((value32 & RTL_ID) ? TEST_CHIP : NORMAL_CHIP);
+ 
+ 	tmpvdr = (value32 & EXT_VENDOR_ID) >> EXT_VENDOR_ID_SHIFT;
+diff --git a/hal/rtl8192e/usb/rtl8192eu_xmit.c b/hal/rtl8192e/usb/rtl8192eu_xmit.c
+index c694bb6..4749461 100644
+--- a/hal/rtl8192e/usb/rtl8192eu_xmit.c
++++ b/hal/rtl8192e/usb/rtl8192eu_xmit.c
+@@ -18,6 +18,14 @@
+ #include <rtl8192e_hal.h>
+ 
+ 
++/* Match the kernel tasklet callback type for Clang CFI. */
++#ifdef PLATFORM_LINUX
++static void rtl8192eu_xmit_tasklet_callback(unsigned long data)
++{
++	rtl8192eu_xmit_tasklet((void *)data);
++}
++#endif
++
+ s32	rtl8192eu_init_xmit_priv(_adapter *padapter)
+ {
+ 	struct xmit_priv	*pxmitpriv = &padapter->xmitpriv;
+@@ -25,7 +33,7 @@ s32	rtl8192eu_init_xmit_priv(_adapter *padapter)
+ 
+ #ifdef PLATFORM_LINUX
+ 	tasklet_init(&pxmitpriv->xmit_tasklet,
+-		     (void(*)(unsigned long))rtl8192eu_xmit_tasklet,
++		     rtl8192eu_xmit_tasklet_callback,
+ 		     (unsigned long)padapter);
+ #endif
+ 	rtl8192e_init_xmit_priv(padapter);
+diff --git a/include/rtl8192e_sreset.h b/include/rtl8192e_sreset.h
+index 78109ae..6e6aa27 100644
+--- a/include/rtl8192e_sreset.h
++++ b/include/rtl8192e_sreset.h
+@@ -12,8 +12,8 @@
+  * more details.
+  *
+  *****************************************************************************/
+-#ifndef _RTL88812A_SRESET_H_
+-#define _RTL8812A_SRESET_H_
++#ifndef _RTL8192E_SRESET_H_
++#define _RTL8192E_SRESET_H_
+ 
+ #include <rtw_sreset.h>
+ 
+diff --git a/include/xmit_osdep.h b/include/xmit_osdep.h
+index 793b0c7..0f16c16 100644
+--- a/include/xmit_osdep.h
++++ b/include/xmit_osdep.h
+@@ -37,7 +37,7 @@ struct xmit_frame;
+ struct xmit_buf;
+ 
+ extern int _rtw_xmit_entry(_pkt *pkt, _nic_hdl pnetdev);
+-extern int rtw_xmit_entry(_pkt *pkt, _nic_hdl pnetdev);
++extern netdev_tx_t rtw_xmit_entry(_pkt *pkt, _nic_hdl pnetdev);
+ 
+ #endif /* PLATFORM_LINUX */
+ 
+diff --git a/os_dep/linux/ioctl_cfg80211.c b/os_dep/linux/ioctl_cfg80211.c
+index 6c994d3..5177668 100644
+--- a/os_dep/linux/ioctl_cfg80211.c
++++ b/os_dep/linux/ioctl_cfg80211.c
+@@ -3919,7 +3919,7 @@ static int cfg80211_rtw_connect(struct wiphy *wiphy, struct net_device *ndev,
+ 		sme->privacy, sme->key, sme->key_len, sme->key_idx, sme->auth_type);
+ 
+ 	if (rtw_check_connect_sae_compat(sme)) {
+-		sme->auth_type = MLME_AUTHTYPE_SAE;
++		sme->auth_type = NL80211_AUTHTYPE_SAE;
+ 		psecuritypriv->auth_type = MLME_AUTHTYPE_SAE;
+ 		psecuritypriv->auth_alg = WLAN_AUTH_SAE;
+ 		RTW_INFO("%s set sme->auth_type for SAE compat\n", __FUNCTION__);
+diff --git a/os_dep/linux/rtw_cfgvendor.c b/os_dep/linux/rtw_cfgvendor.c
+index 64478de..6a34b00 100644
+--- a/os_dep/linux/rtw_cfgvendor.c
++++ b/os_dep/linux/rtw_cfgvendor.c
+@@ -171,7 +171,7 @@ static struct sk_buff *rtw_cfg80211_vendor_event_alloc(
+ int rtw_cfgvendor_send_async_event(struct wiphy *wiphy,
+ 	   struct net_device *dev, int event_id, const void  *data, int len)
+ {
+-	u16 kflags;
++	gfp_t kflags;
+ 	struct sk_buff *skb;
+ 
+ 	kflags = in_atomic() ? GFP_ATOMIC : GFP_KERNEL;
+@@ -394,7 +394,7 @@ exit:
+ int rtw_cfgvendor_send_hotlist_event(struct wiphy *wiphy,
+ 	struct net_device *dev, void  *data, int len, rtw_vendor_event_t event)
+ {
+-	u16 kflags;
++	gfp_t kflags;
+ 	const void *ptr;
+ 	struct sk_buff *skb;
+ 	int malloc_len, total, iter_cnt_to_send, cnt;
+diff --git a/os_dep/linux/xmit_linux.c b/os_dep/linux/xmit_linux.c
+index ab2e1e3..b6d8e6b 100644
+--- a/os_dep/linux/xmit_linux.c
++++ b/os_dep/linux/xmit_linux.c
+@@ -544,7 +544,7 @@ exit:
+ 	return 0;
+ }
+ 
+-int rtw_xmit_entry(_pkt *pkt, _nic_hdl pnetdev)
++netdev_tx_t rtw_xmit_entry(_pkt *pkt, _nic_hdl pnetdev)
+ {
+ 	_adapter *padapter = (_adapter *)rtw_netdev_priv(pnetdev);
+ 	struct	mlme_priv	*pmlmepriv = &(padapter->mlmepriv);

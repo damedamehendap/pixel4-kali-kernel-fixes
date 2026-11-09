@@ -1,0 +1,82 @@
+diff --git a/hal/hal_hci/hal_usb.c b/hal/hal_hci/hal_usb.c
+index de0fc65..2e117c2 100644
+--- a/hal/hal_hci/hal_usb.c
++++ b/hal/hal_hci/hal_usb.c
+@@ -17,6 +17,14 @@
+ #include <drv_types.h>
+ #include <hal_data.h>
+ 
++/* Match the kernel tasklet callback type for Clang CFI. */
++#ifdef PLATFORM_LINUX
++static void usb_recv_tasklet_callback(unsigned long data)
++{
++	usb_recv_tasklet((void *)data);
++}
++#endif
++
+ int	usb_init_recv_priv(_adapter *padapter, u16 ini_in_buf_sz)
+ {
+ 	struct recv_priv	*precvpriv = &padapter->recvpriv;
+@@ -25,7 +33,7 @@ int	usb_init_recv_priv(_adapter *padapter, u16 ini_in_buf_sz)
+ 
+ #ifdef PLATFORM_LINUX
+ 	tasklet_init(&precvpriv->recv_tasklet,
+-		     (void(*)(unsigned long))usb_recv_tasklet,
++		     usb_recv_tasklet_callback,
+ 		     (unsigned long)padapter);
+ #endif /* PLATFORM_LINUX */
+ 
+diff --git a/hal/rtl8192e/usb/rtl8192eu_xmit.c b/hal/rtl8192e/usb/rtl8192eu_xmit.c
+index c694bb6..4749461 100644
+--- a/hal/rtl8192e/usb/rtl8192eu_xmit.c
++++ b/hal/rtl8192e/usb/rtl8192eu_xmit.c
+@@ -18,6 +18,14 @@
+ #include <rtl8192e_hal.h>
+ 
+ 
++/* Match the kernel tasklet callback type for Clang CFI. */
++#ifdef PLATFORM_LINUX
++static void rtl8192eu_xmit_tasklet_callback(unsigned long data)
++{
++	rtl8192eu_xmit_tasklet((void *)data);
++}
++#endif
++
+ s32	rtl8192eu_init_xmit_priv(_adapter *padapter)
+ {
+ 	struct xmit_priv	*pxmitpriv = &padapter->xmitpriv;
+@@ -25,7 +33,7 @@ s32	rtl8192eu_init_xmit_priv(_adapter *padapter)
+ 
+ #ifdef PLATFORM_LINUX
+ 	tasklet_init(&pxmitpriv->xmit_tasklet,
+-		     (void(*)(unsigned long))rtl8192eu_xmit_tasklet,
++		     rtl8192eu_xmit_tasklet_callback,
+ 		     (unsigned long)padapter);
+ #endif
+ 	rtl8192e_init_xmit_priv(padapter);
+diff --git a/include/xmit_osdep.h b/include/xmit_osdep.h
+index 793b0c7..0f16c16 100644
+--- a/include/xmit_osdep.h
++++ b/include/xmit_osdep.h
+@@ -37,7 +37,7 @@ struct xmit_frame;
+ struct xmit_buf;
+ 
+ extern int _rtw_xmit_entry(_pkt *pkt, _nic_hdl pnetdev);
+-extern int rtw_xmit_entry(_pkt *pkt, _nic_hdl pnetdev);
++extern netdev_tx_t rtw_xmit_entry(_pkt *pkt, _nic_hdl pnetdev);
+ 
+ #endif /* PLATFORM_LINUX */
+ 
+diff --git a/os_dep/linux/xmit_linux.c b/os_dep/linux/xmit_linux.c
+index ab2e1e3..b6d8e6b 100644
+--- a/os_dep/linux/xmit_linux.c
++++ b/os_dep/linux/xmit_linux.c
+@@ -544,7 +544,7 @@ exit:
+ 	return 0;
+ }
+ 
+-int rtw_xmit_entry(_pkt *pkt, _nic_hdl pnetdev)
++netdev_tx_t rtw_xmit_entry(_pkt *pkt, _nic_hdl pnetdev)
+ {
+ 	_adapter *padapter = (_adapter *)rtw_netdev_priv(pnetdev);
+ 	struct	mlme_priv	*pmlmepriv = &(padapter->mlmepriv);
