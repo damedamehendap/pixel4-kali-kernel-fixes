@@ -42,3 +42,8 @@ Symlink-size warnings and chroot runlevel warnings remained in the apt output, b
 No boot images, ramdisks, device backups, binaries, raw device logs, serial numbers, or account credentials are included. This repository does not contain the complete kernel source or toolchains. Obtain matching sources separately; do not treat this repository as a complete binary-distribution source offer.
 
 Kernel-derived material is provided under GPL-2.0; see `COPYING`. New helper scripts in this repository are also GPL-2.0-only. Original upstream notices remain applicable.
+
+## RTL8192EU USB Wi-Fi fixes
+
+[RTL8192EU build and CFI fixes, automatic connection, and validation](rtl8192eu/README.md) documents the external USB Wi-Fi work. Automatic insertion and unplug/replug communication were tested; Android's default network is preserved, and reboot startup has not been tested.
+
