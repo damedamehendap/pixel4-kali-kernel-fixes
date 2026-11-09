@@ -1,0 +1,6 @@
+id=rtl8192eu_autoconnect
+name=RTL8192EU home Wi-Fi autoconnect
+version=1.0
+versionCode=1
+author=Local Pixel 4 setup
+description=Automatically connect the RTL8192EU adapter to the configured home 2.4GHz Wi-Fi. Requires mounted NetHunter Kali; Android default network is preserved.
